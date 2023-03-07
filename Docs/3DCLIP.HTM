@@ -1,0 +1,294 @@
+<html>
+<head>
+<title>3D-Clipping for Realtime Graphics</title>
+</head>
+<body bgcolor=660033 text=ffcccc link=FFff66 alink=FFFFFF vlink=999999
+background="./sourcererbg.jpg">
+<center><font size=+4>3D Clipping for Realtime Graphics</font><br>
+Hamburg (Germany), the 21th November 1997.<br>Written by
+Nils Pipenbrinck aka <a href="mailto:submissive@cubic.org">Submissive/Cubic &
+$eeN</a><P>
+Damn, this is boring. Bring me back to
+the <a href="./source.htm">Code-Corner!</center></A><br></P> <HR>
+
+
+<P><font size=+2 color = ccccffff>Table Of Contents</font></P><P>
+<UL type=square>
+<font size=+1>
+<LI> <a href ="#ma1">Introduction</a></li>
+<LI> <a href ="#ma2">2D or 3D clipping?</a></li>
+<LI> <a href ="#ma3">What's a frustum, how does it look and how to calculate it?</a></li>
+<LI> <a href ="#ma4">Clipping polygons against a frustum</a>
+<UL>
+  <LI><a href ="#ma41">Clipping a 3D-line against a plane</a></LI>
+  <LI><a href ="#ma42">Clipping a 3D-polygon against a plane</a></LI>
+  <LI><a href ="#ma43">Clipping a 3D-polygon against a frustum</a></LI>
+</UL></li>
+<LI> <a href ="#ma5">Speed issues</a></li>
+<LI> <a href ="#ma6">Final words</a>
+<UL>
+  <LI> <a href = "#ma61">Download Sourcecode</a></LI>
+</UL>
+</li>
+<LI> <a href ="#ma7">Contact me</a></li>
+</font>
+</UL>
+
+</P><P><br><hr>
+<UL>
+<LI><P><font size=+1 color = ccccffff><a name="ma1">Introduction
+</a></font></P><P>
+Clipping is very important in 3D graphics. The main purpose is, to prevent
+the triangle drawing routine from trashing memory and drawing out of the
+screenspace. 3D-clipping can also help you to speed up your rendering
+engine. <br><br>I'll first explain the basics and at the end you'll find some
+ideas for the speed issue.</P><br><br>
+
+<LI><P><font size=+1 color = ccccffff><a name="ma2">
+2D or 3D clipping?</a></font></P><P>
+Basically there are two different approaches to clipping. The first and most
+common one is the 2D clipping algorithm.<br><br>
+In this kind of algorithm the clipping will be done at the last stage of rendering.
+The trinagle-routine used to render the polygons onto the screen will take care,
+that you don't draw outside the screen. This can be very fast, but increases
+the complexity of the triangle-filler (and it's not as easy as 3D-clipping can be).
+This clipping method works directy with two dimensional screen-coordinates</P>
+<P>
+In 3D clipping you do everything in 3D space (in my examples it's done in camera-space
+If you don't know about this don't care about it..)<br><br>
+If we want to clip in 3D space we need to have a description of the stuff the
+camera of our rendering-engine can see. When we'll use perspective projection
+(the most common projection type) This space can be described as a frustum.</P>
+<br><br>
+<LI><P><font size=+1 color = ccccffff><a name="ma3">What's a frustum, how does
+ it look and how to calculate it?
+</a></font></P><P>
+<center>A frustum looks like a clipped pyramid.<br><br>
+<img src ="./frustum.gif"  width=281 height=160 border=1 alt="picture of a view-frustum"></center>
+<br><br>
+The camera (not seen on this drawing) is placed behind the z near clip plane.
+And this plane is nessesary. It avoids nasty "divde by zero" errors and also
+takes care, that you don't see anything that's behind you.. A mathematical camera
+is not like your eyes are.. Your eyes can't look behind themselfs, but a mathematical
+camera can. In this tutorial I'll skip the far clipping plane. If you want to
+use one feel free to add one.</P><P>
+<strong>How do we represent this frustum?</strong><br><br>
+When we want to describe the frustum we should use 6 planes.<br><br>
+The structures might look like this (I'll use them during my tutorials):<br>
+<pre><strong><font color=ffffffff>
+struct tvector
+{
+  float x,y,z;             // standard vector
+};
+
+struct plane
+{
+  tvector  normal;         // normalized Normal-Vector of the plane
+  float    distance;       // shortest distance from plane to Origin
+};
+
+struct frustum
+{
+  plane sides[4];          // represent the 4 sides of the frustum
+  plane znear;             // the z-near plane
+}
+
+</pre></strong></font>
+Just as an example: If you want to construct a plane from 3 points do it this way:<br><br>
+<pre><strong><font color=ffffffff>
+plane p;                      // plane to construct from a,b and c
+tvector a,b,c;                // points to build a plane from
+{
+   // build normal vector
+   tvector q,v;
+   q.x = b.x - a.x;    v.x = b.x - c.x;
+   q.y = b.y - a.y;    v.x = b.y - c.y;
+   q.z = b.y - a.y;    v.x = b.z - c.z;
+   p.normal = crossproduct (q,v);
+   normalize_vector (q.normal);
+
+   // calculate distance to origin
+   p.distance = dotproduct (p.normal, a);  // you could also use b or c
+}
+</pre></strong></font>
+For our frustum we don't have 3 points of the view-frustum, but we know a little
+bit about the opening angle of our view-frustum. It's dependent to the perspective
+distortion and the screen-size we use.<br><br>
+<strong>I used this pice of code in my 3D-engine:</strong>
+<pre><strong><font color=ffffffff>
+void setup_frustum (float project_scale, float SX, float SY)
+<hr>// * project_scale is the projection scaling factor used in the perspective
+//   projection. It's the value you multiply x and y with before you divide
+//   them by z. (usually I use 256 for this value).
+//
+//  * SX and SY are the size of the viewport you want to draw at (320,200 anyone?)
+<hr>{
+  float angle_horizontal =  atan2(SX/2,project_scale)-0.0001;
+  float angle_vertical   =  atan2(SY/2,project_scale)-0.0001;
+  float sh               =  sin(angle_horizontal);
+  float sv               =  sin(angle_vertical);
+  float ch               =  cos(angle_horizontal);
+  float cv               =  cos(angle_vertical);
+  // left
+  sides[0].normal.x=ch;
+  sides[0].normal.y=0;
+  sides[0].normal.z=sh;
+  sides[0].distance = 0;
+  // right
+  sides[1].normal.x=-ch;
+  sides[1].normal.y=0;
+  sides[1].normal.z=sh;
+  sides[1].distance = 0;
+  // top
+  sides[2].normal.x=0;
+  sides[2].normal.y=cv;
+  sides[2].normal.z=sv;
+  sides[2].distance = 0;
+  // bottom
+  sides[3].normal.x=0;
+  sides[3].normal.y=-cv;
+  sides[3].normal.z=sv;
+  sides[3].distance = 0;
+  // z-near clipping plane
+  znear.normal.x=0;
+  znear.normal.y=0;
+  znear.normal.z=1;
+  znear.distance = -10;
+}
+</strong></pre></font>
+<strong><font size =+1>Some notes:</font></strong></P><p>
+<UL>
+<LI>All plane normal vectors should point inside the frustum!<br><br></LI>
+<LI>I subtract a very small value from the angles and thus make
+the frustum a little bit smaller than it should be.. <br>I do this to avoid
+roundoff-errors. This setup works perfectly, I never had any situation where the
+clipping didn't worked... <br><br></LI>
+<LI>Did you also noticed, that most of the plane distances are zero?<br>This is correct
+because the camera is placed at the origin of the coordinate system
+and thus all planes go directly through it. This will save some computations later,
+when we clip polygons against the view-frustum.<br><br></LI>
+<LI>The z near plane is placed 10 units behind the projection-plane. I experimented
+with different distances and found out, that this value works ok. Try some different
+values and look what happends.<br><br></LI>
+<LI>I only used 5 planes instead of 6.. I ignored the far clipping plane (since it's
+not really important). If you want one, than add it yourself: the normal vector
+would be &lt0,0,-1&gt, and the distance? Well, choose one.. 1000 might be a good value to start with.<br><br></LI>
+</UL></P><br><br>
+
+<LI><P><font size=+1 color = ccccffff><a name="ma4">Clipping polygons against a frustum
+</a></font></P><P>
+Now we want to clip a polygon against our view-frustum.<br>
+To do so, we first need a clipping routine to clip a line against a plane. <br>
+Afterwards we'll extend this to polygons vs. planes and finally to planes vs. frustum.</P><P>
+<UL>
+<li><strong><font color = ccccffff><a name="ma41">Clip a 3D-line against a plane</a></font></strong><br><br>
+A line in 3D-space is defined by two points (let's call them A and B) We can now
+look on which side of the plane these points are. We only have to calculate the
+distance from the point to the plane.
+<pre><strong><font color=ffffffff>
+distance = dotproduct (point, plane.normal) - plane.distance;
+</pre></strong></font>
+The distance is &lt zero if the point is on the backside of the plane.<br>
+It's zero if the point is on the plane, and positive otherwise<br><br>
+If booth points have a negative distance we can remove them. The line will be
+entirely on the backside of the plane. If booth are positive we don't have to do
+anything (line is completely visible).<br><br>
+<strong>But if the signs are different we have to calculate the intersection point of
+the plane and the line:</strong><br><pre><strong><font color=ffffffff>
+  float da;   // distance plane -> point a
+  float db;   // distance plane -> point b
+
+  float s = da/(da-db);   // intersection factor (between 0 and 1)
+
+  intersectpoint.x = a.x + s*(b.x-a.x);
+  intersectpoint.y = a.y + s*(b.y-a.y);
+  intersectpoint.z = a.z + s*(b.z-a.z);
+
+  // need to clip more values (texture coordinates)? do it this way:
+  intersectpoint.value = a.value + s*(b.value-a.value);
+</strong></pre></font>
+To clip the line just replace the point on the backside of the polygon with
+the intersection point. That's all.<br></P><P></LI>
+<li><strong><font color = ccccffff><a name="ma42">Clip a 3D-polygon against a plane</a></font></strong><br><br>
+All we have to do to clip a polygon against a plane is to clip each line of the
+polygon to the plane. Note, that if you work with triangles you might get a quad
+after you've clipped it, so make sure, that during clipping you can store the
+additional vertices and triangulate the clipped polygon afterwards.</P><P>
+I don't give the code here, it's a nice practice, and if you're really don't
+know howto do it either contact me or look into the sourcecode I provide at the
+end of this tutorial.<br><br></P><P>
+<li><strong><font color = ccccffff><a name="ma43">Clip a 3D-polygon against a frustum</a></font></strong><br><br>
+Clipping to the frustum just extends from the 'clip to plane' stuff. You only
+have to clip the polygon against each plane of the frustum. One after another.<br><br>
+Sure, there are more advanced and faster algorithms to do this, but after you
+understood this simple brute force approach you will be able to understand the
+better Liang-Barsky 3D clipping algorithm (and all the other).<br><br>
+If you want to learn more about them buy yourself the great <strong>"Computer Graphics, Priciples and Practice"</strong> book.
+(you'll need anyways it if you want to do serious 3d-coding)<br></P><P></LI>
+</UL><br></P><P>
+<LI><P><font size=+1 color = ccccffff><a name="ma5">Speed issues
+</a></font></P><P>
+With this approach of 3D clipping you'll spend a lot of time in the clipping
+code. <br>This is a problem, but it can turn into an advantage:<br><br>
+Your polygon code doesn't need to care about clipping anymore and thus can
+be a lot faster and smaller. If you have different kinds of polygons (textured,
+lightened or even bump-mapped) you have less setup-code and thus your polygon
+code is more easy to maintain.<br><br>
+All hardware accelerated 3D-cards I know doesn't clip on their own. Therefore
+you need 3D-clipping anyways if you want to use them.<br><br>
+If you use boundary-boxes (you should definately do so) you can save a lot of time.
+Just check the 8 vertices of the boundary box against the frustum-planes and look
+which planes intersect the boundary box. You can build a bit-mapped outcode
+number out of these values and call a optimized clipping routine for this object.<br><br>
+Those objects, that are entirely outside the frustum don't need to be drawed at all, so you
+can ignore them at all, and for the objects that need no clipping at all you'll
+gain a lot of speed because your triangle-fillers don't do the needless clipping anymore.<br><br>
+Ok, this is a lot of code to write, but if you want a 3D-engine that flies you should
+do so. </P><p><br><br>
+<LI><P><font size=+1 color = ccccffff><a name="ma6">Final words
+</a></font></P><P>
+I learned a lot while I made the 3d-clipping code for my engine, and I wasn't
+able to find any good web-page about 3d-clipping on the net. I know, that this
+approach is slow, but at least it works. Again I recommend the 3D-bible:
+<pre><strong>
+        Computer Graphics: Priciples and Practice
+        Foley et al.
+        Addison-Wesley Publishing
+        ISBN: 0-201-12110-7 (this is the english second edition)
+
+        (1174 pages about graphic-programming... I can't live without it!)
+</pre></strong>
+Don't be shocked, that this book dates back to 1990. The standard-algorithms
+don't loose actuality (and the 'historic' chapters of this book are definately
+fun to read, hahaha)... You'll need a good mathematical background to understand
+some chapters (Radiosity anyone?) but there is a short math-primer in the
+appendix that I use to read from time to time to fresh-up my vector math...</P><P>
+<a name="ma61"></a>
+<center><a href ="./download/3dclip.zip">Download Source + EXE of my very simple and never finished 3D-engine.</a><br><br>
+<a href = "./download/asc23d.exe">Download a 3DS ASC to internal format converter</a>
+<br><br><br>
+<img src="./3dclip.gif" width=200 height=150 border=1 alt="snapshot of what you can expect"></center><br><br><strong><font size=+1>Warning:</strong></font>
+Don't expect this to be good code! I simply hacked it together in one or two weeks...
+It uses 3D clipping and it's very well commented (some parts in german, but the
+important stuff is in english).<br><br>
+At least it works, and maybe this is a good starting point for someone who plans to write his own 3d-engine.
+
+<br><br>You can rip out the clipping part if
+you want, but send me a comment or give me a credit if you do so...<br><br>
+Oh, before I forget it.. The polygon code was written by Scholar, once a coder of Cubic & $een, and now lazy...</P><P>
+<br><br>
+<LI><P><font size=+1 color = ccccffff><a name="ma7">Contact me
+</a></font></P><P>
+Yep, do so! If you have some comments to add, a question or found a bug or
+typo: <br><br>My email is simply <a href="mailto:submissive@cubic.org">Submissive@cubic.org</a>
+(Yep, and thanks to all those who noticed, that I misspelled the word frustum
+over the entire page...  shame on you!)
+</LI>
+</UL>
+<HR>
+<center>... back to the <a
+href="./source.htm">Code-Corner!</center></A><br></P>
+
+</body>
+</html>
+
