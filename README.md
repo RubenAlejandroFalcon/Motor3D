@@ -14,7 +14,7 @@ Objetivo: Incorporarle al Engine el corte 3D de los objetos simulando
           la visión mediante un frustrum (pirámide truncada) y, por lo
           tanto, haciendo el clipping contra él.
 
-Autor:    Falcón, Rubén Alejandro (hawks1@bbs.frc.utn.edu.ar)
+Autor:    Rubén Alejandro Falcón (hawks1@bbs.frc.utn.edu.ar)
 
 
 Para ello se llevaron a cabo los siguientes cambios con respecto
